@@ -1,7 +1,7 @@
 //! Types related to task management
 
-use crate::config::MAX_APP_NUM;
-
+//use crate::config::MAX_APP_NUM;
+use crate::config::MAX_SYSCALL_NUM;
 use super::TaskContext;
 
 /// The task control block (TCB) of a task.

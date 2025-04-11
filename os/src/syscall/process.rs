@@ -53,7 +53,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
         // 功能1，写入_data到该用户程序_id地址处
         1 => {
             unsafe {
-                *(id as *mut u8) = (data as u8);
+                *(id as *mut u8) = data as u8;
             }
             0
         },

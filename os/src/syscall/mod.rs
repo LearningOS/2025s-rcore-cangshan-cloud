@@ -31,7 +31,7 @@ use process::*;
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     // 在执行系统调用前，增加系统调用计数器
     let current_task = crate::task::get_current_task();
-    crate::task::increment_syscall_counter(task_id, syscall_id);
+    crate::task::increment_syscall_counter(current_task, syscall_id);
     
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
