@@ -39,7 +39,39 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 }
 
 // TODO: implement the syscall
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    -1
+    let current_task = crate::task::get_current_task();
+    let mut inner = crate::task::TASK_MANAGER.inner.exclusive_access();
+
+    // 首先统计本次调用的次数
+    inner.tasks[current_task].syscall_counter[410] += 1;
+
+    match trace_request {
+        // 功能0，读取当前任务 id 地址处一个字节的无符号整数值
+        0 => {
+            unsafe  {
+                *(id as *const u8) as isize
+            }
+        },
+        
+        // 功能1，写入_data到该用户程序_id地址处
+        1 => {
+            unsafe {
+                *(id as *mut u8) = (data as u8);
+            }
+            0
+        },
+
+        // 功能2，查询当前系统调用次数，本次调用也计入统计
+        2 => {
+            if id < inner.tasks[current_task].syscall_counter.len() {
+                inner.tasks[current_task].syscall_counter[id] as isize
+            } else {
+                -1
+            }
+        },
+
+        _ => -1,
+    }
 }
