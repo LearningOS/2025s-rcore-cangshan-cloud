@@ -1,7 +1,6 @@
 //! Process management syscalls
 use crate::{
-    task::{exit_current_and_run_next, suspend_current_and_run_next},
-    timer::get_time_us,
+    config::MAX_SYSCALL_NUM, task::{exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time_us
 };
 
 #[repr(C)]
@@ -42,10 +41,6 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
     let current_task = crate::task::get_current_task();
-    let mut inner = crate::task::TASK_MANAGER.inner.exclusive_access();
-
-    // 首先统计本次调用的次数
-    inner.tasks[current_task].syscall_counter[410] += 1;
 
     match trace_request {
         // 功能0，读取当前任务 id 地址处一个字节的无符号整数值
@@ -64,9 +59,9 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
         },
 
         // 功能2，查询当前系统调用次数，本次调用也计入统计
-        2 => {
-            if id < inner.tasks[current_task].syscall_counter.len() {
-                inner.tasks[current_task].syscall_counter[id] as isize
+        2 =>  {
+            if id < MAX_SYSCALL_NUM {
+                crate::task::get_syscall_counter(current_task, id) as isize
             } else {
                 -1
             }

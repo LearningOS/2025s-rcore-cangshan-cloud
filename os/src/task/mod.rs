@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::config::MAX_APP_NUM;
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -136,6 +137,10 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// 获取当前任务
+    pub fn get_current_task(&self) -> usize {
+        self.inner.exclusive_access().current_task
+    }
 }
 
 /// Run the first task in task list.
@@ -169,4 +174,20 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+
+/// 获得当前任务的 ID
+pub fn get_current_task() -> usize {
+    TASK_MANAGER.get_current_task()
+}
+
+/// 访问任务的 syscall_counter
+pub fn get_syscall_counter(task_id: usize, syscall_id: usize) -> usize {
+    TASK_MANAGER.inner.exclusive_access().tasks[task_id].syscall_counter[syscall_id]    
+}
+
+/// syscall_counter自增1
+pub fn increment_syscall_counter(task_id: usize, syscall_id: usize) {
+    TASK_MANAGER.inner.exclusive_access().tasks[task_id].syscall_counter[syscall_id] += 1;
 }
