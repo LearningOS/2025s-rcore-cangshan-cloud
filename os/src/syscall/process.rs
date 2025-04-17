@@ -49,107 +49,14 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    let token = current_user_token();
-    let ptr = ts as usize;
-    let len = core::mem::size_of::<TimeVal>();
-    let buffers = translated_byte_buffer(token, ptr as *const u8, len);
-
-    // 检查所有缓冲区是否可写
-    if buffers.is_empty() {
-        return -1;
-    }
-    let page_table = PageTable::from_token(token);
-    let mut check_addr = ptr;
-    let end_addr = ptr + len;
-    while check_addr < end_addr {
-        let vpn = VirtAddr::from(check_addr).floor();
-        if let Some(pte) = page_table.translate(vpn) {
-            if !pte.is_valid() || !pte.writable() || !pte.user() {
-                return -1;
-            }
-        } else {
-            return -1;
-        }
-        check_addr = (vpn.0 + 1) * PAGE_SIZE;
-    }
-
-    // 获取时间
-    let ms = get_time_ms();
-    let sec = ms / 1000;
-    let usec = (ms % 1000) * 1000;
-    let timeval = TimeVal { sec, usec };
-
-    // 写入用户空间
-    let timeval_bytes = unsafe {
-        core::slice::from_raw_parts(
-            &timeval as *const TimeVal as *const u8,
-            core::mem::size_of::<TimeVal>(),
-        )
-    };
-    let mut copied = 0;
-    for buf in buffers {
-        let len = buf.len().min(timeval_bytes.len() - copied);
-        buf[..len].copy_from_slice(&timeval_bytes[copied..copied + len]);
-        copied += len;
-        if copied >= timeval_bytes.len() {
-            break;
-        }
-    }
-    0
+    -1
 }
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    let token = current_user_token();
-    let page_table = PageTable::from_token(token);
-    let va = VirtAddr::from(id);
-    let vpn = va.floor();
-
-    match trace_request {
-        // 读取
-        0 => {
-            // 检查权限
-            if let Some(pte) = page_table.translate(vpn) {
-                if !pte.is_valid() || !pte.readable() || !pte.user() {
-                    return -1;
-                }
-            } else {
-                return -1;
-            }
-            let buffers = translated_byte_buffer(token, id as *const u8, 1);
-            if buffers.is_empty() {
-                return -1;
-            }
-            buffers[0][0] as isize
-        }
-        // 写入
-        1 => {
-            if let Some(pte) = page_table.translate(vpn) {
-                if !pte.is_valid() || !pte.writable() || !pte.user() {
-                    return -1;
-                }
-            } else {
-                return -1;
-            }
-            let buffers = translated_byte_buffer(token, id as *const u8, 1);
-            if buffers.is_empty() {
-                return -1;
-            }
-            buffers[0][0] = data as u8;
-            0
-        }
-        // 查询系统调用次数
-        2 => {
-            if id < MAX_SYSCALL_NUM {
-                get_syscall_counter(current_task(), id) as isize
-            } else {
-                -1
-            }
-        }
-        _ => -1,
-    }
+    -1
 }
 
 // YOUR JOB: Implement mmap.
