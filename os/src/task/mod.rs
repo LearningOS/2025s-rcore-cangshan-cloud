@@ -116,8 +116,7 @@ impl TaskManager {
 
     /// Get the current 'Running' task's token.
     fn get_current_token(&self) -> usize {
-        let inner = self.inner.exclusive_access();
-        inner.tasks[inner.current_task].get_user_token()
+        /// TODO
     }
 
     /// Get the current 'Running' task's trap contexts.
@@ -207,5 +206,5 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
 pub fn current_task() -> &'static mut TaskControlBlock {
-    TASK_MANAGER.get_currrnt_task()
+    /// TODO
 }

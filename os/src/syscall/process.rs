@@ -78,15 +78,6 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     let len = if len == 0 { 0 } else { ((len - 1) / PAGE_SIZE + 1) * PAGE_SIZE };
 
     // 3. 检查区间是否已被映射
-    let task = current_task();
-    let mut inner = task.inner_exclusive_access();
-    let start_vpn = VirtAddr(start).floor();
-    let end_vpn = VirtAddr(start + len).ceil();
-    for vpn in VPNRange::new(start_vpn, end_vpn) {
-        if inner.memory_set.translate(vpn).is_some() {
-            return -1;
-        }
-    }
 
     // 4. 权限转换
     let mut map_perm = MapPermission::U;
@@ -95,11 +86,6 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     if (prot & 0x4) != 0 { map_perm |= MapPermission::X; }
 
     // 5. 匿名映射
-    inner.memory_set.insert_framed_area(
-        VirtAddr(start),
-        VirtAddr(start + len),
-        map_perm
-    );
     0
 }
 
@@ -115,19 +101,8 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     let len = if len == 0 { 0 } else { ((len - 1) / PAGE_SIZE + 1) * PAGE_SIZE };
 
     // 3. 检查区间是否已被完整映射
-    let task = current_task();
-    let mut inner = task.inner_exclusive_access();
-    let start_vpn = VirtAddr(start).floor();
-    let end_vpn = VirtAddr(start + len).ceil();
-    for vpn in VPNRange::new(start_vpn, end_vpn) {
-        if inner.memory_set.translate(vpn).is_none() {
-            return -1;
-        }
-    }
 
     // 4. 只允许完整、唯一的区间取消映射
-    inner.memory_set.remove_area_with_start_vpn(start_vpn);
-    0
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
