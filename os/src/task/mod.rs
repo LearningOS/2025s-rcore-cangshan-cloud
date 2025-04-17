@@ -153,6 +153,10 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    fn get_currrnt_task(&self) -> &mut TaskControlBlock {
+        let inner = self.inner.exclusive_access();
+        &mut inner.tasks[inner.current_task]
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +205,7 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+pub fn current_task() -> &'static mut TaskControlBlock {
+    TASK_MANAGER.get_currrnt_task()
 }

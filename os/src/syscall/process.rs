@@ -1,5 +1,22 @@
 //! Process management syscalls
-use crate::{mm::MapPermission, task::{change_program_brk, current_user_token, exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time_ms};
+use crate::{
+    mm::{
+        MapPermission, 
+        VirtAddr, 
+        VPNRange,
+        MapType,
+        MemorySet,
+    },
+    task::{
+        change_program_brk, 
+        current_task, 
+        current_user_token, 
+        exit_current_and_run_next, 
+        suspend_current_and_run_next
+    },
+    timer::get_time_ms,
+    config::PAGE_SIZE,
+};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -101,82 +118,72 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap");
-
-    // 1.start按页对齐
-    if start % PAGE_SIZE != 0 {
+    
+    // 检查参数合法性
+    if start % PAGE_SIZE != 0 || prot & !0x7 != 0 || prot & 0x7 == 0 {
         return -1;
     }
-
-    // 2.prot检查   
-    if prot & 0x7 != 0 {
-        return -1;
-    }
-
-    // 3,无意义的内存
-    if prot & 0x7 == 0 {
-        return -1;
-    }
-
-    // 计算映射长度
-    let len  = if len == 0 {
-        0
-    } else {
-        (len - 1) / PAGE_SIZE + 1
-    } * PAGE_SIZE;
-
-
+    
+    // 计算需要映射的长度（按页向上取整）
+    let len = if len == 0 { 0 } else { (len - 1) / PAGE_SIZE + 1 } * PAGE_SIZE;
+    
     // 获取当前任务
-    let token = current_user_token();
-    let page_table = PageTable::from_token(token);
-
-    //  检查地址区间是否已经被映射
-    let start_vpn = VirtAddr::from(start).floor();
-    let end_vpn = VirtAddr::from(start + len).ceil();
-    for vpn in start_vpn..end_vpn {
-        if page_table.translate(vpn).is_some() {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    
+    // 检查要映射的区域是否已经被映射
+    let start_vpn = VirtAddr(start).floor();
+    let end_vpn = VirtAddr(start + len).ceil();
+    for vpn in VPNRange::new(start_vpn, end_vpn) {
+        if inner.memory_set.translate(vpn).is_some() {
             return -1;
         }
     }
-
+    
     // 设置映射权限
     let mut map_perm = MapPermission::U;
-    if prot & 0x1 != 0 {
-        map_perm |= MapPermission::R;
-    }
-    if prot & 0x2 != 0 {
-        map_perm |= MapPermission::W;
-    }
-    if prot & 0x4 != 0 {
-        map_perm |= MapPermission::X;
-    }
-
-    //  创建新的映射区域
-
+    if (prot & 0x1) != 0 { map_perm |= MapPermission::R; }
+    if (prot & 0x2) != 0 { map_perm |= MapPermission::W; }
+    if (prot & 0x4) != 0 { map_perm |= MapPermission::X; }
+    
+    // 创建新的映射区域
+    inner.memory_set.insert_framed_area(
+        VirtAddr(start),
+        VirtAddr(start + len),
+        map_perm
+    );
+    0
 }
 
-// YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!("kernel: sys_munmap");
-
-    // start按页对齐
+    
+    // 检查参数合法性
     if start % PAGE_SIZE != 0 {
         return -1;
     }
-
-    // 计算取消映射长度
-    let len  = if len == 0 {
-        0
-    } else {
-        (len - 1) / PAGE_SIZE + 1
-    } * PAGE_SIZE;
-
-    // 获取当前任务的内存集
-
-    // 检查是否已经被映射
-
-    // 查找并删除映射区域
+    
+    // 计算需要取消映射的长度（按页向上取整）
+    let len = if len == 0 { 0 } else { (len - 1) / PAGE_SIZE + 1 } * PAGE_SIZE;
+    
+    // 获取当前任务
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    
+    // 检查要取消映射的区域是否已经被映射
+    let start_vpn = VirtAddr(start).floor();
+    let end_vpn = VirtAddr(start + len).ceil();
+    for vpn in VPNRange::new(start_vpn, end_vpn) {
+        if inner.memory_set.translate(vpn).is_none() {
+            return -1;
+        }
+    }
+    
+    // 取消映射
+    inner.memory_set.remove_area_with_start_vpn(start_vpn);
+    0
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
