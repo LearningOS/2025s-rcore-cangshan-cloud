@@ -63,6 +63,7 @@ impl MemorySet {
             None,
         );
     }
+    /// 去除指定的映射区域
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
         if let Some((idx, area)) = self
             .areas
@@ -74,6 +75,18 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+    /// 检查是否已经被映射
+    pub fn check_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if self.translate(vpn).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
 
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);

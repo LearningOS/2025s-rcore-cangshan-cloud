@@ -116,7 +116,9 @@ impl TaskManager {
 
     /// Get the current 'Running' task's token.
     fn get_current_token(&self) -> usize {
-        /// TODO
+        let inner = self.inner.borrow();
+        let current = inner.current_task;
+        inner.tasks[current].get_user_token()
     }
 
     /// Get the current 'Running' task's trap contexts.
@@ -152,9 +154,8 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
-    fn get_currrnt_task(&self) -> &mut TaskControlBlock {
-        let inner = self.inner.exclusive_access();
-        &mut inner.tasks[inner.current_task]
+    pub fn get_currrnt_task(&self) -> usize{
+        self.inner.exclusive_access().current_task
     }
 }
 
@@ -205,6 +206,18 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
-pub fn current_task() -> &'static mut TaskControlBlock {
-    /// TODO
+
+/// 获得当前任务编号
+pub fn get_current_task() -> usize {
+    TASK_MANAGER.get_currrnt_task()
+}
+
+/// 获得当前任务的syscall_
+pub fn get_syscall_counter(syscall_id: usize) -> usize {
+    TASK_MANAGER.inner.exclusive_access().tasks[TASK_MANAGER.get_currrnt_task()].syscall_counter[syscall_id]
+}
+
+/// 增加当前任务的syscall_counter
+pub fn increment_syscall_counter(syscall_id: usize) {
+    TASK_MANAGER.inner.exclusive_access().tasks[TASK_MANAGER.get_currrnt_task()].syscall_counter[syscall_id] += 1;
 }
