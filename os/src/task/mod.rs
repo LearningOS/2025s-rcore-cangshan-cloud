@@ -116,9 +116,8 @@ impl TaskManager {
 
     /// Get the current 'Running' task's token.
     fn get_current_token(&self) -> usize {
-        let inner = self.inner.borrow();
-        let current = inner.current_task;
-        inner.tasks[current].get_user_token()
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].get_user_token()
     }
 
     /// Get the current 'Running' task's trap contexts.
@@ -154,6 +153,7 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// 获取当前任务的编号
     pub fn get_currrnt_task(&self) -> usize{
         self.inner.exclusive_access().current_task
     }
