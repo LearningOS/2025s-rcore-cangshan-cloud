@@ -53,18 +53,20 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    let buffers =
-    translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
     let us = get_time_us();
-    let time_val = TimeVal {
+    let buffers = translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
+    let ref time_val = TimeVal {
         sec: us / 1_000_000,
         usec: us % 1_000_000,
     };
-    let mut time_val_ptr = &time_val as *const _ as *const u8;
-    for buffer in buffers {
+    let src_ptr = time_val as *const TimeVal;
+    for (idx, buffer) in buffers.into_iter().enumerate() {
+        let unit_len = buffer.len();
         unsafe {
-            time_val_ptr.copy_to(buffer.as_mut_ptr(), buffer.len());
-            time_val_ptr = time_val_ptr.add(buffer.len());
+            buffer.copy_from_slice(core::slice::from_raw_parts(
+                src_ptr.wrapping_byte_add(idx * unit_len) as *const u8,
+                unit_len)
+            );
         }
     }
     0
@@ -118,9 +120,14 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 
     // 参数合法性检查
     if start % PAGE_SIZE != 0 ||
+        len % PAGE_SIZE!= 0 ||
+        len == 0 ||
         prot & !0x7 != 0 ||
         prot & 0x7 ==0 ||
-        start >= 0x80000000 {
+        (prot & 0x1 == 0 && prot & 0x2 != 0) ||
+        start >= 0x80000000  ||
+        start + len > 0x80000000 ||
+        start + len < start {
             return -1;
         }
     

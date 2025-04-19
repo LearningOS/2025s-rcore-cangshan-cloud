@@ -266,9 +266,7 @@ pub fn remove_map_area(start: usize, len: usize) -> isize {
             if !pte.is_valid() {
                 return -1;
             }
-            if !inner.tasks[current].memory_set.unmap_one_by_vpn(vpn) {
-                return -1;
-            }
+            inner.tasks[current].memory_set.get_page_table().unmap(vpn);
         } else {
             return -1;
         }

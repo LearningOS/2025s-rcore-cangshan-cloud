@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
+use core::borrow::BorrowMut;
 
 extern "C" {
     fn stext();
@@ -271,7 +272,11 @@ impl MemorySet {
             false
         }
     }
-
+    /// 获得页表
+    #[allow(unused)]
+    pub fn get_page_table(&mut self) -> &mut PageTable {
+        self.page_table.borrow_mut()
+    }
     /// append the area to new_end
     #[allow(unused)]
     pub fn append_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
