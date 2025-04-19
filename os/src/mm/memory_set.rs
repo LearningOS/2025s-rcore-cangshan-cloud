@@ -438,3 +438,20 @@ pub fn remap_test() {
         .executable(),);
     println!("remap_test passed!");
 }
+
+impl MemorySet {
+    /// 删除虚拟内存空间中的一个虚拟页
+    pub fn remove_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        let mut found = false;
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if self.unmap_one_by_vpn(vpn) {
+                found = true;
+            }
+        }
+        // 可选：清理空的 MapArea
+        self.areas.retain(|area| area.vpn_range.get_start() < area.vpn_range.get_end());
+        found
+    }
+}

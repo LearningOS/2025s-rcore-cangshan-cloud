@@ -53,21 +53,27 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
+    let buffers =
+        translated_byte_buffer(current_user_token(), ts as *const u8, core::mem::size_of::<TimeVal>());
+    if buffers.is_empty() {
+        return -1;
+    }
     let us = get_time_us();
-    let buffers = translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
-    let ref time_val = TimeVal {
+    let time_val = TimeVal {
         sec: us / 1_000_000,
         usec: us % 1_000_000,
     };
-    let src_ptr = time_val as *const TimeVal;
-    for (idx, buffer) in buffers.into_iter().enumerate() {
-        let unit_len = buffer.len();
+    let src_ptr = &time_val as *const TimeVal as *const u8;
+    let mut offset = 0;
+    for buffer in buffers {
         unsafe {
-            buffer.copy_from_slice(core::slice::from_raw_parts(
-                src_ptr.wrapping_byte_add(idx * unit_len) as *const u8,
-                unit_len)
+            core::ptr::copy_nonoverlapping(
+                src_ptr.add(offset),
+                buffer.as_mut_ptr(),
+                buffer.len(),
             );
         }
+        offset += buffer.len();
     }
     0
 }
@@ -116,20 +122,17 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
-    trace!("kernel: sys_mmap");
-
-    // 参数合法性检查
     if start % PAGE_SIZE != 0 ||
-        len % PAGE_SIZE!= 0 ||
         len == 0 ||
+        len % PAGE_SIZE != 0 ||
         prot & !0x7 != 0 ||
-        prot & 0x7 ==0 ||
+        prot & 0x7 == 0 ||
         (prot & 0x1 == 0 && prot & 0x2 != 0) ||
-        start >= 0x80000000  ||
-        start + len > 0x80000000 ||
-        start + len < start {
-            return -1;
-        }
+        start >= 0x80000000 ||
+        start.checked_add(len).map_or(true, |end| end > 0x80000000)
+    {
+        return -1;
+    }
     
     // 检查区间是否已被完整映射
     let start_vpn = VirtAddr::from(start).floor();
@@ -152,18 +155,15 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
-    trace!("kernel: sys_munmap");
-
-    // 参数合法性检查
     if start >= 0x80000000 ||
-        start % PAGE_SIZE != 0 {
-            return -1;
-        }
-    let mut mlen = len;
-    if start > 0x80000000 - len {
-        mlen = 0x80000000 - start;
+        start % PAGE_SIZE != 0 ||
+        len == 0 ||
+        len % PAGE_SIZE != 0 ||
+        start.checked_add(len).map_or(true, |end| end > 0x80000000)
+    {
+        return -1;
     }
-    remove_map_area(start, mlen)
+    remove_map_area(start, len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

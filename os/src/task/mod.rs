@@ -18,7 +18,6 @@ use crate::loader::{get_app_data, get_num_app};
 use crate::mm::{MapPermission,
     PageTableEntry, 
     VirtPageNum,
-    VPNRange,
     VirtAddr,
 };
 use crate::sync::UPSafeCell;
@@ -258,18 +257,10 @@ pub fn create_new_map_area(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermis
 pub fn remove_map_area(start: usize, len: usize) -> isize {
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let current = inner.current_task;
-    let start_vpn = VirtAddr::from(start).floor();
-    let end_vpn = VirtAddr::from(start + len).ceil();
-    let vpns = VPNRange::new(start_vpn, end_vpn);
-    for vpn in vpns {
-        if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
-            if !pte.is_valid() {
-                return -1;
-            }
-            inner.tasks[current].memory_set.get_page_table().unmap(vpn);
-        } else {
-            return -1;
-        }
-    } 
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+    if !inner.tasks[current].memory_set.remove_area(start_va, end_va) {
+        return -1;
+    }
     0
 }
