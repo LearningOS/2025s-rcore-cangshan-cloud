@@ -15,6 +15,12 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission,
+    PageTableEntry, 
+    VirtPageNum,
+    VPNRange,
+    VirtAddr,
+};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -157,6 +163,14 @@ impl TaskManager {
     pub fn get_currrnt_task(&self) -> usize{
         self.inner.exclusive_access().current_task
     }
+    /// 获取当前任务的syscall_counter
+    pub fn get_syscall_counter(&self, syscall_id: usize) -> usize{
+        self.inner.exclusive_access().tasks[self.get_currrnt_task()].syscall_counter[syscall_id]
+    }
+    /// 增加当前任务的syscall_counter
+    pub fn increment_syscall_counter(&self, syscall_id: usize){
+        self.inner.exclusive_access().tasks[self.get_currrnt_task()].syscall_counter[syscall_id] += 1;
+    }
 }
 
 /// Run the first task in task list.
@@ -212,12 +226,52 @@ pub fn get_current_task() -> usize {
     TASK_MANAGER.get_currrnt_task()
 }
 
-/// 获得当前任务的syscall_
+/// 获得当前任务的syscall_counter
 pub fn get_syscall_counter(syscall_id: usize) -> usize {
-    TASK_MANAGER.inner.exclusive_access().tasks[TASK_MANAGER.get_currrnt_task()].syscall_counter[syscall_id]
+    TASK_MANAGER.get_syscall_counter(syscall_id)
 }
 
 /// 增加当前任务的syscall_counter
 pub fn increment_syscall_counter(syscall_id: usize) {
-    TASK_MANAGER.inner.exclusive_access().tasks[TASK_MANAGER.get_currrnt_task()].syscall_counter[syscall_id] += 1;
+    TASK_MANAGER.increment_syscall_counter(syscall_id);
+}
+
+/// 获得当前任务的页表
+pub fn get_current_task_page_table(vpn: VirtPageNum) -> Option<PageTableEntry> {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current].memory_set.translate(vpn)    
+}
+
+/// 创建新映射区域
+pub fn create_new_map_area(start_va: VirtAddr, end_va: VirtAddr, perm: MapPermission) {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current].memory_set.insert_framed_area(
+        start_va,
+        end_va,
+        perm,
+    );
+}
+
+/// 删除映射区域
+pub fn remove_map_area(start: usize, len: usize) -> isize {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    let start_vpn = VirtAddr::from(start).floor();
+    let end_vpn = VirtAddr::from(start + len).ceil();
+    let vpns = VPNRange::new(start_vpn, end_vpn);
+    for vpn in vpns {
+        if let Some(pte) = inner.tasks[current].memory_set.translate(vpn) {
+            if !pte.is_valid() {
+                return -1;
+            }
+            if !inner.tasks[current].memory_set.unmap_one_by_vpn(vpn) {
+                return -1;
+            }
+        } else {
+            return -1;
+        }
+    } 
+    0
 }

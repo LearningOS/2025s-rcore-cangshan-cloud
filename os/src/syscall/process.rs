@@ -1,13 +1,29 @@
 //! Process management syscalls
 use crate::{
     config::{
-        MAX_SYSCALL_NUM, PAGE_SIZE
-    }, mm::translated_byte_buffer, 
+        PAGE_SIZE,
+        MAX_SYSCALL_NUM,
+    },
+    mm::{
+        translated_byte_buffer, 
+        MapPermission,
+        VirtAddr,
+        VPNRange,
+    }, 
+    task::{
+        create_new_map_area,
+        get_current_task_page_table, 
+        remove_map_area,
+    }, 
     timer::get_time_us
 };
 
 use crate::task:: {
-    current_user_token,exit_current_and_run_next,suspend_current_and_run_next,get_syscall_counter,change_program_brk
+    current_user_token,
+    get_syscall_counter,
+    exit_current_and_run_next,
+    suspend_current_and_run_next,
+    change_program_brk
 };
 
 use core::mem::size_of;
@@ -38,7 +54,7 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     let buffers =
-        translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
+    translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
     let us = get_time_us();
     let time_val = TimeVal {
         sec: us / 1_000_000,
@@ -58,20 +74,24 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    let token = current_user_token();
-
 
     match trace_request {
+        // 功能0，读取当前任务 id 地址处一个字节的无符号整数值
         0 => {
+            // 检查用户空间可读性
+            let token = current_user_token();
             let buffers = translated_byte_buffer(token, id as *const u8, 1);
             if buffers.is_empty() {
                 return -1;
             }
+            // 只读第一个字节
             buffers[0][0] as isize
         },
 
+        // 功能1，写入 data 到该用户程序 id 地址处
         1 => {
-            let mut buffers = translated_byte_buffer(token, id as *const u8, 1);
+            let token = current_user_token();
+            let mut buffers = translated_byte_buffer(token, id as *mut u8, 1);
             if buffers.is_empty() {
                 return -1;
             }
@@ -79,7 +99,8 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             0
         },
 
-        2=> {
+        // 功能2，查询当前系统调用次数，本次调用也计入统计
+        2 =>  {
             if id < MAX_SYSCALL_NUM {
                 get_syscall_counter(id) as isize
             } else {
@@ -95,74 +116,47 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
 pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap");
 
-    // 1. 参数合法性检查
-    if start % PAGE_SIZE != 0 {
-        return -1;
+    // 参数合法性检查
+    if start % PAGE_SIZE != 0 ||
+        prot & !0x7 != 0 ||
+        prot & 0x7 ==0 ||
+        start >= 0x80000000 {
+            return -1;
+        }
+    
+    // 检查区间是否已被完整映射
+    let start_vpn = VirtAddr::from(start).floor();
+    let end_vpn = VirtAddr::from(start + len).ceil();
+    let vpns = VPNRange::new(start_vpn, end_vpn);
+    for vpn in vpns {
+        if let Some(pte) = get_current_task_page_table(vpn) {
+            if pte.is_valid() {
+                return -1;
+            }
+        }
     }
-    if prot & !0x7 != 0 {
-        return -1;
-    }
-    if prot & 0x7 == 0 {
-        return -1;
-    }
-
-    // 2. 计算映射长度（按页向上取整）
-    let _len = if len == 0 { 0 } else { ((len - 1) / PAGE_SIZE + 1) * PAGE_SIZE };
-
-    // 3. 检查区间是否已被映射
-    /*let task = get_current_task();
-    let mut inner = TASK_MANAGER.inner.exclusive_access();
-    let task_control_block = &inner.tasks[task];
-    let mut memory_set = &task_control_block.memory_set;
-    if memory_set.check_overlap(
-        VirtAddr::from(start), 
-        VirtAddr::from(start + len)
-    ) {
-        return -1;
-    }
-
-    // 4. 权限转换
-    let mut permission = MapPermission::from_bits((prot as u8) << 1).unwrap();
-    permission.set(MapPermission::U, true);
-
-    // 5. 匿名映射
-    memory_set.insert_framed_area (
+    // 创建新映射区域
+    create_new_map_area(
         VirtAddr::from(start),
         VirtAddr::from(start + len),
-        permission,
+        MapPermission::from_bits_truncate((prot << 1) as u8) | MapPermission::U
     );
-    */    
     0
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!("kernel: sys_munmap");
 
-    // 1. 参数合法性检查
-    if start % PAGE_SIZE != 0 {
-        return -1;
+    // 参数合法性检查
+    if start >= 0x80000000 ||
+        start % PAGE_SIZE != 0 {
+            return -1;
+        }
+    let mut mlen = len;
+    if start > 0x80000000 - len {
+        mlen = 0x80000000 - start;
     }
-
-    // 2. 计算长度
-    let _len = if len == 0 { 0 } else { ((len - 1) / PAGE_SIZE + 1) * PAGE_SIZE };
-
-    // 3. 检查区间是否已被完整映射
-    /*let current_task_id = get_current_task();
-    let mut inner = TASK_MANAGER.inner.exclusive_access();
-    let memory_set = &mut inner.tasks[current_task_id].memory_set;
-
-    if !memory_set.check_overlap(
-        VirtAddr::from(start), 
-        VirtAddr::from(start + len)
-    ) {
-        return -1;
-    }
-    // 4. 只允许完整、唯一的区间取消映射
-    memory_set.remove_area_with_start_vpn(
-        VirtAddr::from(start).floor()
-    );
-    */
-    0
+    remove_map_area(start, mlen)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

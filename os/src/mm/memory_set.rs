@@ -63,18 +63,7 @@ impl MemorySet {
             None,
         );
     }
-    /// 去除指定的映射区域
-    pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
-        if let Some((idx, area)) = self
-            .areas
-            .iter_mut()
-            .enumerate()
-            .find(|(_, area)| area.vpn_range.get_start() == start_vpn)
-        {
-            area.unmap(&mut self.page_table);
-            self.areas.remove(idx);
-        }
-    }
+
     /// 检查是否已经被映射
     pub fn check_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
         let start_vpn = start_va.floor();
@@ -86,7 +75,17 @@ impl MemorySet {
         }
         false
     }
-
+    /// 公有的遍历并删除映射
+    pub fn unmap_one_by_vpn(&mut self, vpn: VirtPageNum) -> bool {
+        for area in self.areas.iter_mut() {
+            if area.vpn_range.get_start() <= vpn &&
+            vpn < area.vpn_range.get_end() {
+                area.unmap_one(&mut self.page_table, vpn);
+                return true;
+            }
+        }
+        false
+    }
 
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
@@ -327,7 +326,6 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
-    #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);
