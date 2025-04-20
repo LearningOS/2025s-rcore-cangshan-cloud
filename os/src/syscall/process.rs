@@ -26,7 +26,6 @@ use crate::task:: {
     change_program_brk
 };
 
-use core::mem::size_of;
 #[repr(C)]
 #[derive(Debug)]
 pub struct TimeVal {
